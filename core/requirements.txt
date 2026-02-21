@@ -1,0 +1,10 @@
+django
+djangorestframework
+django-cors-headers
+channels
+channels-redis
+daphne
+pillow
+python-decouple
+redis
+cryptography

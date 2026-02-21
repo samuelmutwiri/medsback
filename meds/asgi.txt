@@ -1,0 +1,117 @@
+# meds/asgi.py
+import os
+import django
+from django.core.asgi import get_asgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'meds.settings')
+django.setup()
+
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.auth import AuthMiddlewareStack
+from django.urls import re_path
+from channels.generic.websocket import AsyncWebsocketConsumer
+import json
+import traceback
+import logging
+
+# Set up logging
+logger = logging.getLogger('websocket')
+logger.setLevel(logging.DEBUG)
+
+class NotificationConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        try:
+            logger.debug("=== CONNECT STARTED ===")
+            logger.debug(f"Scope type: {self.scope.get('type')}")
+            logger.debug(f"Scope path: {self.scope.get('path')}")
+            
+            await self.accept()
+            logger.debug("WebSocket accepted")
+            
+            welcome_msg = {
+                'type': 'connection_established',
+                'message': 'Connected successfully!'
+            }
+            await self.send(text_data=json.dumps(welcome_msg))
+            logger.debug(f"Welcome sent: {welcome_msg}")
+            
+            logger.debug("=== CONNECT COMPLETED ===")
+        except Exception as e:
+            logger.error(f"CONNECT ERROR: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+    
+    async def disconnect(self, close_code):
+        logger.debug(f"=== DISCONNECT: code={close_code} ===")
+    
+    async def receive(self, text_data):
+        logger.debug("=== RECEIVE STARTED ===")
+        logger.debug(f"Raw text_data: {repr(text_data)}")
+        logger.debug(f"text_data type: {type(text_data)}")
+        
+        try:
+            # First, just echo the raw data back
+            logger.debug("Attempting to echo raw data...")
+            await self.send(text_data=text_data)
+            logger.debug("Raw echo successful")
+            
+            # Now try to parse as JSON
+            logger.debug("Attempting to parse JSON...")
+            parsed = json.loads(text_data)
+            logger.debug(f"Parsed JSON: {parsed}")
+            
+            # Send a JSON response
+            response = {
+                'type': 'response',
+                'original': parsed,
+                'processed': True
+            }
+            logger.debug(f"Sending JSON response: {response}")
+            await self.send(text_data=json.dumps(response))
+            logger.debug("JSON response sent")
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            error_response = {
+                'type': 'error',
+                'error': 'Invalid JSON',
+                'received': text_data
+            }
+            await self.send(text_data=json.dumps(error_response))
+        except Exception as e:
+            logger.error(f"UNEXPECTED ERROR in receive: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # Try to send an error message before failing
+            try:
+                error_msg = {
+                    'type': 'fatal_error',
+                    'error': str(e),
+                    'traceback': traceback.format_exc()
+                }
+                await self.send(text_data=json.dumps(error_msg))
+            except:
+                pass
+            
+            # Don't re-raise - let the connection continue
+            logger.debug("=== RECEIVE COMPLETED WITH ERRORS ===")
+            return
+        
+        logger.debug("=== RECEIVE COMPLETED SUCCESSFULLY ===")
+
+# Define WebSocket URL patterns
+websocket_urlpatterns = [
+    re_path(r'ws/notifications/$', NotificationConsumer.as_asgi()),
+]
+
+# Create the ASGI application
+application = ProtocolTypeRouter({
+    "http": get_asgi_application(),
+    "websocket": AuthMiddlewareStack(
+        URLRouter(
+            websocket_urlpatterns
+        )
+    ),
+})
+
+print("DEBUG: ASGI application loaded with detailed logging")

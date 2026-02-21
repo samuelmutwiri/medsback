@@ -1,0 +1,63 @@
+📡 API Endpoints Reference
+Authentication
+
+POST /api/auth/register/- Register new user
+POST /api/auth/login/- User Login
+POST /api/auth/logout/- Logout user
+GET /api/auth/user/- Get current user
+
+Courses
+
+GET /api/courses/- List all courses
+POST /api/courses/- Create course (CEO only)
+GET /api/courses/{id}/Get course details
+PUT /api/courses/{id}/- Update course (CEO only)
+DELETE /api/courses/{id}/- Delete course (CEO only)
+GET /api/courses/search/?q=<query>&type=<type>- Search courses
+
+Enrollments
+
+GET /api/enrollments/- List enrollments
+POST /api/enrollments/- Create enrollment
+GET /api/enrollments/{id}/Get enrollment details
+PATCH /api/enrollments/{id}/update_progress/- Update progress
+
+Payments
+
+GET /api/payments/- List of payments
+POST /api/payments/- Create payment
+GET /api/payments/{id}/- Get payment details
+GET /api/payments/statistics/- Get payment stats (CEO only)
+
+Certificates
+
+GET /api/certificates/- List certificates
+POST /api/certificates/- Issue certificate
+GET /api/certificates/verify/?certificate_id=<id>- Verify certificate
+
+Exams
+
+GET /api/exams/- List exams
+POST /api/exams/- Create exam (Instructor/CEO)
+GET /api/exams/{id}/- Get exam details
+
+Exam Results
+
+GET /api/exam-results/- List results
+POST /api/exam-results/- Create result
+GET /api/exam-results/{id}/- Get result details
+
+Notifications
+
+GET /api/notifications/- List notifications
+POST /api/notifications/{id}/mark_read/- Mark as read
+POST /api/notifications/mark_all_read/- Mark all as read
+GET /api/notifications/unread_count/- Get unread count
+
+Dashboard
+
+GET /api/dashboard/stats/- Get dashboard statistics
+
+WebSocket
+
+ws://localhost:8000/ws/notifications/- Real-time notifications

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Email Change Notification</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #333; }
+    .container { max-width: 600px; margin: auto; padding: 20px; border-radius: 10px; border: 1px solid #eee; background-color: #fafafa; }
+    h2 { color: #dc3545; }
+    .footer { margin-top: 30px; font-size: 13px; color: #777; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Email Address Changed</h2>
+    <p>Dear {{ username }},</p>
+    <p>Your account email was changed from <strong>{{ old_email }}</strong> to <strong>{{ new_email }}</strong>.</p>
+    <p>If you did not authorize this change, please contact MEDSRAVTS support immediately.</p>
+    <p class="footer">This is an automated email from MEDSRAVTS. Please do not reply.</p>
+  </div>
+</body>
+</html>
