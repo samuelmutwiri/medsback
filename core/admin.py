@@ -1,6 +1,9 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Course, Enrollment, Payment, Certificate, Exam, ExamResult, Notification
+from .models import (
+    User, Course, Enrollment, Payment, Certificate, Exam, ExamResult, Notification,
+    GalleryPhoto, Schedule, Grade, Feedback, Attendance, Allocation,
+)
 
 
 @admin.register(User)
@@ -64,3 +67,44 @@ class NotificationAdmin(admin.ModelAdmin):
     list_display = ['title', 'user', 'notification_type', 'is_read', 'created_at']
     list_filter = ['notification_type', 'is_read', 'created_at']
     search_fields = ['title', 'message', 'user__username']
+
+
+@admin.register(GalleryPhoto)
+class GalleryPhotoAdmin(admin.ModelAdmin):
+    list_display = ['type', 'caption', 'uploaded_by', 'created_at']
+    list_filter = ['type', 'created_at']
+    search_fields = ['caption']
+
+
+@admin.register(Schedule)
+class ScheduleAdmin(admin.ModelAdmin):
+    list_display = ['course', 'instructor', 'date', 'start_time', 'location']
+    list_filter = ['date']
+    search_fields = ['course__name', 'instructor__username']
+
+
+@admin.register(Grade)
+class GradeAdmin(admin.ModelAdmin):
+    list_display = ['student', 'course', 'marks', 'grade', 'marked_by', 'created_at']
+    list_filter = ['grade', 'created_at']
+    search_fields = ['student__username', 'course__name']
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = ['student', 'course', 'given_by', 'created_at']
+    search_fields = ['student__username', 'course__name']
+
+
+@admin.register(Attendance)
+class AttendanceAdmin(admin.ModelAdmin):
+    list_display = ['student', 'course', 'date', 'present']
+    list_filter = ['present', 'date']
+    search_fields = ['student__username', 'course__name']
+
+
+@admin.register(Allocation)
+class AllocationAdmin(admin.ModelAdmin):
+    list_display = ['instructor', 'course', 'status', 'allocated_by', 'allocated_at']
+    list_filter = ['status']
+    search_fields = ['instructor__username', 'course__name']

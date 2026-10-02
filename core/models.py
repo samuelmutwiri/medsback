@@ -212,3 +212,119 @@ class Notification(models.Model):
     
     def __str__(self):
         return f"{self.title} - {self.user.username}"
+
+
+class GalleryPhoto(models.Model):
+    """Photos for the public MoU Gallery and Clinical Research Gallery pages.
+    Uploaded and managed by the CEO from the Executive Dashboard."""
+    TYPE_CHOICES = [
+        ('mou', 'MoU Gallery'),
+        ('clinical-research', 'Clinical Research Gallery'),
+    ]
+
+    type = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    image = models.ImageField(upload_to='gallery/')
+    caption = models.CharField(max_length=255)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='gallery_uploads')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['type']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_type_display()} - {self.caption}"
+
+
+class Schedule(models.Model):
+    """Specialist course scheduling / calendars."""
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='schedules')
+    instructor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='schedules')
+    date = models.DateField()
+    start_time = models.TimeField(blank=True, null=True)
+    location = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['date', 'start_time']
+        indexes = [
+            models.Index(fields=['course', 'date']),
+        ]
+
+    def __str__(self):
+        return f"{self.course.name} - {self.date}"
+
+
+class Grade(models.Model):
+    """Specialist marking / gradebook entries (independent of formal Exam results)."""
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='grades')
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='grades')
+    marks = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
+    grade = models.CharField(max_length=10, blank=True)
+    remarks = models.TextField(blank=True)
+    marked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='marked_grades')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['student', 'course']),
+        ]
+
+    def __str__(self):
+        return f"{self.student.username} - {self.course.name} - {self.grade}"
+
+
+class Feedback(models.Model):
+    """Specialist feedback given to a student for a course."""
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_feedback')
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='feedback')
+    message = models.TextField()
+    given_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='given_feedback')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Feedback for {self.student.username} - {self.course.name}"
+
+
+class Attendance(models.Model):
+    """Daily attendance marking by specialists."""
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='attendance_records')
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='attendance_records')
+    date = models.DateField()
+    present = models.BooleanField(default=True)
+    marked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='marked_attendance')
+
+    class Meta:
+        unique_together = ['student', 'course', 'date']
+        ordering = ['-date']
+
+    def __str__(self):
+        status = 'Present' if self.present else 'Absent'
+        return f"{self.student.username} - {self.course.name} - {self.date} - {status}"
+
+
+class Allocation(models.Model):
+    """CEO-assigned specialist -> course allocations."""
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('ended', 'Ended'),
+    ]
+
+    instructor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='allocations')
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='allocations')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    allocated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='made_allocations')
+    allocated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ['instructor', 'course']
+        ordering = ['-allocated_at']
+
+    def __str__(self):
+        return f"{self.instructor.username} -> {self.course.name}"

@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import User, Course, Enrollment, Payment, Certificate, Exam, ExamResult, Notification
+from .models import (
+    User, Course, Enrollment, Payment, Certificate, Exam, ExamResult, Notification,
+    GalleryPhoto, Schedule, Grade, Feedback, Attendance, Allocation,
+)
 from core.utils.email_utils import send_login_credentials, send_email_changed_notification
 
 
@@ -75,6 +78,7 @@ class CourseSerializer(serializers.ModelSerializer):
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     """Enrollment Serializer"""
+    student = serializers.HiddenField(default=serializers.CurrentUserDefault())
     student_name = serializers.CharField(source='student.get_full_name', read_only=True)
     course_name = serializers.CharField(source='course.name', read_only=True)
     course_details = CourseSerializer(source='course', read_only=True)
@@ -94,6 +98,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = '__all__'
         read_only_fields = ['id', 'payment_date', 'transaction_id']
+        extra_kwargs = {'user': {'required': False}}
 
     def create(self, validated_data):
         import uuid
@@ -217,3 +222,84 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             send_email_changed_notification(instance.username, old_email, new_email)
 
         return instance
+
+
+class GalleryPhotoSerializer(serializers.ModelSerializer):
+    """Gallery Photo Serializer — backs the MoU Gallery and Clinical Research Gallery pages."""
+    uploaded_by_name = serializers.CharField(source='uploaded_by.get_full_name', read_only=True)
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GalleryPhoto
+        fields = '__all__'
+        read_only_fields = ['id', 'uploaded_by', 'created_at']
+
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.image and request:
+            return request.build_absolute_uri(obj.image.url)
+        return obj.image.url if obj.image else None
+
+
+class ScheduleSerializer(serializers.ModelSerializer):
+    """Schedule Serializer — specialist course scheduling and calendars."""
+    course_name = serializers.CharField(source='course.name', read_only=True)
+    instructor_name = serializers.CharField(source='instructor.get_full_name', read_only=True)
+
+    class Meta:
+        model = Schedule
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at']
+        extra_kwargs = {'instructor': {'required': False}}
+
+
+class GradeSerializer(serializers.ModelSerializer):
+    """Grade Serializer — specialist marking / gradebook."""
+    student_name = serializers.CharField(source='student.get_full_name', read_only=True)
+    course_name = serializers.CharField(source='course.name', read_only=True)
+
+    class Meta:
+        model = Grade
+        fields = '__all__'
+        read_only_fields = ['id', 'marked_by', 'created_at']
+
+
+class FeedbackSerializer(serializers.ModelSerializer):
+    """Feedback Serializer — specialist feedback to students."""
+    student_name = serializers.CharField(source='student.get_full_name', read_only=True)
+    course_name = serializers.CharField(source='course.name', read_only=True)
+
+    class Meta:
+        model = Feedback
+        fields = '__all__'
+        read_only_fields = ['id', 'given_by', 'created_at']
+
+
+class AttendanceSerializer(serializers.ModelSerializer):
+    """Attendance Serializer."""
+    student_name = serializers.CharField(source='student.get_full_name', read_only=True)
+    course_name = serializers.CharField(source='course.name', read_only=True)
+
+    class Meta:
+        model = Attendance
+        fields = '__all__'
+        read_only_fields = ['id', 'marked_by']
+
+
+class AllocationSerializer(serializers.ModelSerializer):
+    """Allocation Serializer — CEO assigns specialists to courses."""
+    instructor_name = serializers.CharField(source='instructor.get_full_name', read_only=True)
+    course_name = serializers.CharField(source='course.name', read_only=True)
+
+    class Meta:
+        model = Allocation
+        fields = '__all__'
+        read_only_fields = ['id', 'allocated_by', 'allocated_at']
+
+
+class UserDirectorySerializer(serializers.ModelSerializer):
+    """Lightweight user listing for the CEO's Export Center (enrolled students,
+    specialist directory, etc.)."""
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'phone', 'created_at']

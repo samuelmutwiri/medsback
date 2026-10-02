@@ -10,6 +10,12 @@ router.register(r'certificates', views.CertificateViewSet)
 router.register(r'exams', views.ExamViewSet)
 router.register(r'exam-results', views.ExamResultViewSet)
 router.register(r'notifications', views.NotificationViewSet)
+router.register(r'gallery', views.GalleryPhotoViewSet)
+router.register(r'schedules', views.ScheduleViewSet)
+router.register(r'grades', views.GradeViewSet)
+router.register(r'feedback', views.FeedbackViewSet)
+router.register(r'attendance', views.AttendanceViewSet)
+router.register(r'allocations', views.AllocationViewSet)
 
 urlpatterns = [
     # Auth endpoints
@@ -27,6 +33,9 @@ urlpatterns = [
     
     # Dashboard
     path('dashboard/stats/', views.dashboard_stats, name='dashboard-stats'),
+
+    # User directory (CEO-only, backs the Export Center)
+    path('users/', views.user_directory, name='user-directory'),
     
     # Include all router URLs
     path('', include(router.urls)),

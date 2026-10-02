@@ -5,6 +5,9 @@ POST /api/auth/register/- Register new user
 POST /api/auth/login/- User Login
 POST /api/auth/logout/- Logout user
 GET /api/auth/user/- Get current user
+GET /api/auth/csrf/- Set CSRF cookie
+GET /api/profile/- Get current user profile
+PATCH /api/profile/- Update current user profile
 
 Courses
 
@@ -32,7 +35,7 @@ GET /api/payments/statistics/- Get payment stats (CEO only)
 Certificates
 
 GET /api/certificates/- List certificates
-POST /api/certificates/- Issue certificate
+POST /api/certificates/- Issue certificate (Instructor/CEO)
 GET /api/certificates/verify/?certificate_id=<id>- Verify certificate
 
 Exams
@@ -56,8 +59,48 @@ GET /api/notifications/unread_count/- Get unread count
 
 Dashboard
 
-GET /api/dashboard/stats/- Get dashboard statistics
+GET /api/dashboard/stats/- Get dashboard statistics (role-aware)
+
+Gallery (MoU Gallery + Clinical Research Gallery)
+
+GET /api/gallery/?type=mou|clinical-research- List photos (public)
+POST /api/gallery/- Upload photo (CEO only, multipart: type, image, caption)
+DELETE /api/gallery/{id}/- Remove photo (CEO only)
+
+Schedules (specialist course scheduling & calendars)
+
+GET /api/schedules/- List schedules (scoped to role)
+POST /api/schedules/- Create a class schedule (Instructor/CEO)
+PATCH /api/schedules/{id}/- Update a schedule (Instructor/CEO)
+DELETE /api/schedules/{id}/- Delete a schedule (Instructor/CEO)
+
+Grades (specialist marking / gradebook)
+
+GET /api/grades/- List grades (scoped to role)
+POST /api/grades/- Record a grade (Instructor/CEO)
+PATCH /api/grades/{id}/- Update a grade (Instructor/CEO)
+
+Feedback
+
+GET /api/feedback/- List feedback (scoped to role)
+POST /api/feedback/- Give feedback (Instructor/CEO)
+
+Attendance
+
+GET /api/attendance/?course=<id>- List attendance (scoped to role)
+POST /api/attendance/- Mark attendance (Instructor/CEO)
+
+Allocations (CEO assigns specialists to courses)
+
+GET /api/allocations/- List allocations (Instructor/CEO)
+POST /api/allocations/- Allocate a specialist to a course (CEO only)
+
+Users Directory (CEO-only — backs CSV/PDF/Word exports)
+
+GET /api/users/?role=student|instructor|ceo- List users
 
 WebSocket
 
 ws://localhost:8000/ws/notifications/- Real-time notifications
+  (joins group `notifications_<user_id>`; pushed to on enrollment, payment,
+  certificate issue, grade, feedback, and allocation)

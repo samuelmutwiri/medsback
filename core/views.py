@@ -2,23 +2,57 @@ from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser
 from django.contrib.auth import login, logout
 from django.db.models import Q, Count, Sum
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.middleware.csrf import get_token
 from django.http import JsonResponse
-from .models import User, Course, Enrollment, Payment, Certificate, Exam, ExamResult, Notification
+from asgiref.sync import async_to_sync
+from .models import (
+    User, Course, Enrollment, Payment, Certificate, Exam, ExamResult, Notification,
+    GalleryPhoto, Schedule, Grade, Feedback, Attendance, Allocation,
+)
 from .serializers import (
     UserSerializer, RegisterSerializer, LoginSerializer, CourseSerializer,
     EnrollmentSerializer, PaymentSerializer, CertificateSerializer,
-    ExamSerializer, ExamResultSerializer, NotificationSerializer
+    ExamSerializer, ExamResultSerializer, NotificationSerializer,
+    GalleryPhotoSerializer, ScheduleSerializer, GradeSerializer,
+    FeedbackSerializer, AttendanceSerializer, AllocationSerializer,
+    UserDirectorySerializer,
 )
 from .permissions import IsCEO, IsInstructor, IsStudent
+from .consumers import send_notification_to_user
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .serializers import UserProfileUpdateSerializer
+
+
+def notify_user(user, title, message, notification_type='info', link=''):
+    """Create a Notification row and push it live over the ws/notifications/
+    socket to that user's group (see core/consumers.py). Used across the app
+    any time an action should alert a specific user in real time."""
+    notification = Notification.objects.create(
+        user=user, title=title, message=message,
+        notification_type=notification_type, link=link,
+    )
+    try:
+        async_to_sync(send_notification_to_user)(user.id, {
+            'id': notification.id,
+            'title': notification.title,
+            'message': notification.message,
+            'type': notification.notification_type,
+            'is_read': notification.is_read,
+            'link': notification.link,
+            'created_at': notification.created_at.isoformat(),
+        })
+    except Exception:
+        # Channel layer may be unavailable (e.g. Redis down) — the DB
+        # notification still exists and will show up on next poll.
+        pass
+    return notification
 
 
 
@@ -156,13 +190,10 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(student=self.request.user)
-        
-        # Create notification
-        Notification.objects.create(
-            user=self.request.user,
-            title='Enrollment Successful',
-            message=f'You have been enrolled in {serializer.instance.course.name}',
-            notification_type='success'
+        notify_user(
+            self.request.user, 'Enrollment Successful',
+            f'You have been enrolled in {serializer.instance.course.name}',
+            'success'
         )
     
     @action(detail=True, methods=['patch'])
@@ -191,13 +222,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         payment = serializer.save(user=self.request.user)
-        
-        # Create notification
-        Notification.objects.create(
-            user=self.request.user,
-            title='Payment Successful',
-            message=f'Payment of ₹{payment.amount} completed successfully',
-            notification_type='success'
+        notify_user(
+            self.request.user, 'Payment Successful',
+            f'Payment of ₹{payment.amount} completed successfully',
+            'success'
         )
     
     @action(detail=False, methods=['get'])
@@ -227,6 +255,21 @@ class CertificateViewSet(viewsets.ModelViewSet):
         if user.role == 'student':
             return self.queryset.filter(student=user)
         return self.queryset.all()
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsInstructor | IsCEO]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def perform_create(self, serializer):
+        certificate = serializer.save()
+        notify_user(
+            certificate.student, 'Certificate Issued',
+            f'Your certificate for {certificate.course.name} is ready to download.',
+            'success'
+        )
     
     @action(detail=False, methods=['get'])
     def verify(self, request):
@@ -238,6 +281,196 @@ class CertificateViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         except Certificate.DoesNotExist:
             return Response({'error': 'Certificate not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# Gallery ViewSet (MoU Gallery + Clinical Research Gallery)
+class GalleryPhotoViewSet(viewsets.ModelViewSet):
+    """Gallery Photo CRUD Operations — public read, CEO-only upload/delete."""
+    queryset = GalleryPhoto.objects.all()
+    serializer_class = GalleryPhotoSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsCEO]
+        else:
+            permission_classes = [AllowAny]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        qs = self.queryset
+        gallery_type = self.request.query_params.get('type')
+        if gallery_type:
+            qs = qs.filter(type=gallery_type)
+        return qs
+
+    def get_serializer_context(self):
+        return {'request': self.request}
+
+    def perform_create(self, serializer):
+        serializer.save(uploaded_by=self.request.user)
+
+
+# Schedule ViewSet (specialist course scheduling / calendars)
+class ScheduleViewSet(viewsets.ModelViewSet):
+    """Schedule CRUD Operations"""
+    queryset = Schedule.objects.all()
+    serializer_class = ScheduleSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsInstructor | IsCEO]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'student':
+            return self.queryset.filter(course__enrollments__student=user).distinct()
+        if user.role == 'instructor':
+            return self.queryset.filter(instructor=user)
+        return self.queryset.all()
+
+    def perform_create(self, serializer):
+        instructor = serializer.validated_data.get('instructor', self.request.user)
+        serializer.save(instructor=instructor)
+
+
+# Grade ViewSet (specialist marking / gradebook)
+class GradeViewSet(viewsets.ModelViewSet):
+    """Grade CRUD Operations"""
+    queryset = Grade.objects.all()
+    serializer_class = GradeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsInstructor | IsCEO]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'student':
+            return self.queryset.filter(student=user)
+        if user.role == 'instructor':
+            return self.queryset.filter(course__schedules__instructor=user).distinct()
+        return self.queryset.all()
+
+    def perform_create(self, serializer):
+        grade = serializer.save(marked_by=self.request.user)
+        notify_user(
+            grade.student, 'New Grade Posted',
+            f'{grade.course.name}: {grade.grade or grade.marks}',
+            'info'
+        )
+
+
+# Feedback ViewSet (specialist feedback to students)
+class FeedbackViewSet(viewsets.ModelViewSet):
+    """Feedback CRUD Operations"""
+    queryset = Feedback.objects.all()
+    serializer_class = FeedbackSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsInstructor | IsCEO]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'student':
+            return self.queryset.filter(student=user)
+        if user.role == 'instructor':
+            return self.queryset.filter(course__schedules__instructor=user).distinct()
+        return self.queryset.all()
+
+    def perform_create(self, serializer):
+        feedback = serializer.save(given_by=self.request.user)
+        notify_user(
+            feedback.student, 'New Feedback Received',
+            f'{feedback.course.name}: {feedback.message[:80]}',
+            'info'
+        )
+
+
+# Attendance ViewSet
+class AttendanceViewSet(viewsets.ModelViewSet):
+    """Attendance CRUD Operations"""
+    queryset = Attendance.objects.all()
+    serializer_class = AttendanceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsInstructor | IsCEO]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = self.queryset
+        course_id = self.request.query_params.get('course')
+        if course_id:
+            qs = qs.filter(course_id=course_id)
+        if user.role == 'student':
+            return qs.filter(student=user)
+        if user.role == 'instructor':
+            return qs.filter(course__schedules__instructor=user).distinct()
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(marked_by=self.request.user)
+
+
+# Allocation ViewSet (CEO assigns specialists to courses)
+class AllocationViewSet(viewsets.ModelViewSet):
+    """Allocation CRUD Operations — CEO-only write, Instructor/CEO read."""
+    queryset = Allocation.objects.all()
+    serializer_class = AllocationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsCEO]
+        else:
+            permission_classes = [IsAuthenticated, IsInstructor | IsCEO]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'instructor':
+            return self.queryset.filter(instructor=user)
+        return self.queryset.all()
+
+    def perform_create(self, serializer):
+        allocation = serializer.save(allocated_by=self.request.user)
+        notify_user(
+            allocation.instructor, 'New Course Allocation',
+            f'You have been allocated to {allocation.course.name}.',
+            'info'
+        )
+
+
+# User Directory (CEO-only — backs the Export Center's Enrolled Students /
+# Specialist directory exports)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsCEO])
+def user_directory(request):
+    """List users, optionally filtered by ?role=student|instructor|ceo"""
+    qs = User.objects.all().order_by('-created_at')
+    role = request.query_params.get('role')
+    if role:
+        qs = qs.filter(role=role)
+    serializer = UserDirectorySerializer(qs, many=True)
+    return Response(serializer.data)
 
 
 # Exam ViewSet
@@ -334,6 +567,7 @@ def dashboard_stats(request):
             'total_students': User.objects.filter(role='student').count(),
             'active_courses': Course.objects.filter(is_active=True).count(),
             'total_enrollments': Enrollment.objects.filter(status='active').count(),
+            'total_certificates': Certificate.objects.count(),
         }
     else:
         stats = {}
